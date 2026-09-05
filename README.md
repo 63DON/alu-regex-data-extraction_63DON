@@ -251,3 +251,22 @@ Ran 28 tests in 0.005s
 
 OK
 ```
+
+---
+
+## Requirements checklist
+
+| Requirement | Where it is met |
+|---|---|
+| At least four data types extracted | Eight types — see the table at the top |
+| Regexes correctly identify each type | `PATTERNS` in `src/main.py`, one commented pattern per type |
+| Real-world variations handled | `input/raw-text.txt` sections 1–4: mixed spacing, punctuation, 12h/24h times, symbol and code currency forms |
+| Edge cases handled | `input/raw-text.txt` section 5 and the edge-case table above |
+| Malicious input rejected | `input/raw-text.txt` section 6; `INJECTION_SIGNATURES` + context-aware quarantine |
+| Sensitive data protected | Card numbers masked before storage; emails and phones masked by default |
+| Code clarity and documentation | Commented patterns, docstrings, this README, and 28 tests |
+
+## Author
+
+**63DON** — ALU Regex Data Extraction assignment.
+Repository: <https://github.com/63DON/alu-regex-data-extraction_63DON>
