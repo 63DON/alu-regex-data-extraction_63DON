@@ -1,186 +1,151 @@
 # ALU Regex Data Extraction
 
-A small, defensive data-extraction tool. It reads unstructured text — support
-tickets, chat logs, scraped HTML, invoices — and pulls out **eight** kinds of
-structured data with regular expressions, validating and sanitising every
-candidate before it is allowed into the output.
+A small command line tool that reads messy unstructured text (support tickets,
+chat logs, scraped HTML, invoices) and pulls eight kinds of structured data out
+of it using regular expressions.
 
-The guiding idea: **a regex tells you something *looks* right; it does not tell
-you it *is* right, and it certainly does not tell you it is *safe*.** So every
-match passes through three gates — a security gate, a validation gate, and a
-sanitisation gate — before it appears in the results.
+The thing I kept coming back to while building this is that a regex only tells
+you a string *looks* right. It doesn't tell you it is right, and it definitely
+doesn't tell you it's safe. So every match goes through a security check, then
+a validator, then a masking step before it ends up in the output.
 
----
+## What it extracts
 
-## Data types extracted
+| # | Type | Examples |
+|---|------|----------|
+| 1 | Email addresses | `user@example.com`, `first.last+tag@sub.domain.example.co.uk` |
+| 2 | URLs | `https://example.com`, `http://host.example.net:8080/path?q=1#frag` |
+| 3 | Phone numbers | `(555) 123-4567`, `555-123-4567`, `555.246.8100`, `+250 788 123 456` |
+| 4 | Credit card numbers | `4111 1111 1111 1111`, `5500-0000-0000-0004`, Amex `3782 822463 10005` |
+| 5 | Times | `14:30`, `23:59:59`, `2:30 PM`, `7:30 a.m.` |
+| 6 | HTML tags | `<p>`, `<div class="x">`, `</span>`, `<img src="..." />`, `<br>` |
+| 7 | Hashtags | `#DataEngineering`, `#alu_regex`, `#100DaysOfCode` |
+| 8 | Currency amounts | `$1,299.00`, `EUR 25,00`, `150,000 RWF`, `£2,450.75`, `¥12,000` |
 
-| # | Type | Examples matched |
-|---|------|------------------|
-| 1 | **Email addresses** | `user@example.com`, `first.last+tag@sub.domain.example.co.uk` |
-| 2 | **URLs** | `https://example.com`, `http://host.example.net:8080/path?q=1#frag` |
-| 3 | **Phone numbers** | `(555) 123-4567`, `555-123-4567`, `555.246.8100`, `+250 788 123 456` |
-| 4 | **Credit card numbers** | `4111 1111 1111 1111`, `5500-0000-0000-0004`, Amex `3782 822463 10005` |
-| 5 | **Times** | `14:30`, `23:59:59`, `2:30 PM`, `7:30 a.m.` |
-| 6 | **HTML tags** | `<p>`, `<div class="x">`, `</span>`, `<img src="..." />`, `<br>` |
-| 7 | **Hashtags** | `#DataEngineering`, `#alu_regex`, `#100DaysOfCode` |
-| 8 | **Currency amounts** | `$1,299.00`, `EUR 25,00`, `150,000 RWF`, `£2,450.75`, `¥12,000` |
-
----
-
-## Quick start
+## Running it
 
 ```bash
 git clone https://github.com/63DON/alu-regex-data-extraction_63DON.git
 cd alu-regex-data-extraction_63DON
 
-python3 src/main.py                       # reads input/raw-text.txt
-                                          # writes output/sample-output.json
+python3 src/main.py
 ```
 
-Options:
+With no arguments it reads `input/raw-text.txt` and writes
+`output/sample-output.json`. You can point it somewhere else:
 
 ```bash
 python3 src/main.py -i path/to/text.txt -o path/to/result.json
-python3 src/main.py --no-mask             # show emails/phones in full
-                                          # (card numbers stay masked, always)
+python3 src/main.py --no-mask     # emails and phones in full, cards stay masked
 ```
 
-Run the tests:
+Tests:
 
 ```bash
-cd src && python3 test_main.py            # 28 tests, no dependencies
+cd src && python3 test_main.py
 ```
 
-Requires **Python 3.9+**. No third-party packages.
+Python 3.9 or newer. No packages to install.
 
----
-
-## Project structure
+## Layout
 
 ```
 alu-regex-data-extraction_63DON/
 ├── input/
-│   └── raw-text.txt          # realistic messy sample: tickets, chat, HTML,
-│                             # malformed data, and injection payloads
+│   └── raw-text.txt          sample messy text, including bad and hostile input
 ├── src/
-│   ├── main.py               # patterns, validators, sanitisers, CLI
-│   └── test_main.py          # 28 unit tests covering every type + security
+│   ├── main.py               patterns, validators, masking, CLI
+│   └── test_main.py          28 tests
 ├── output/
-│   └── sample-output.json    # generated report (data + rejects + counts)
+│   └── sample-output.json    the generated report
 └── README.md
 ```
 
----
-
-## How it works
-
-Each match travels through a short pipeline:
+## How a match is handled
 
 ```
 raw text
-   │
-   ├─▶ size / line-length guard        (reject oversized or hostile input up front)
-   │
-   ├─▶ regex match                     (static, bounded patterns only)
-   │
-   ├─▶ security gate                   (injection signatures — on the match AND
-   │                                     on the line it came from)
-   │
-   ├─▶ validation gate                 (Luhn, TLD, E.164 digit count, scheme
-   │                                     allow-list, length caps …)
-   │
-   ├─▶ de-duplication                  (phones/cards compared by digits, so
-   │                                     555-1234 == 555.1234)
-   │
-   └─▶ sanitisation                    (mask cards always; mask emails/phones
-                                         unless --no-mask)
+  -> size and line length check
+  -> regex match
+  -> injection check (on the match, and on the line it came from)
+  -> validator (Luhn, TLD, digit count, allowed scheme, length)
+  -> de-duplication
+  -> masking
 ```
 
-### The patterns, briefly
+## Notes on the patterns
 
-Every pattern lives in the `PATTERNS` dict in `src/main.py`, each with a comment
-explaining its parts. A few of the more interesting decisions:
+All eight live in the `PATTERNS` dict in `src/main.py` with comments on each
+one. The decisions worth explaining:
 
-**Email** — the TLD is forced to be alphabetic (`[A-Za-z]{2,24}`), which is what
-rejects `user@localhost`. A left guard `(?<![\w.+-])` stops the pattern starting
-mid-word, and the local part is capped at the RFC's 64 characters.
+**Email.** The TLD has to be alphabetic (`[A-Za-z]{2,24}`), which is what
+rejects `user@localhost`. There's a lookbehind so the pattern can't start in
+the middle of a word, and the local part is capped at 64 characters like the
+RFC says.
 
-**URL** — the scheme is pinned to `https?` in the regex *and* re-checked in the
-validator. That redundancy is deliberate: `javascript:`, `data:`, `file:` and
-`ftp:` are the three or four schemes that turn "extracted a link" into a security
-incident, so they are blocked twice. Trailing sentence punctuation is stripped,
-so `See https://example.com/docs.` yields the URL without the full stop.
+**URL.** The scheme is limited to `http`/`https` in the regex and checked again
+in the validator. Doing it twice is on purpose, since `javascript:`, `data:`
+and `file:` are exactly how "we extracted a link" turns into a security
+problem. Trailing sentence punctuation gets stripped, so
+`See https://example.com/docs.` gives the URL without the full stop.
 
-**Phone** — three explicit alternatives instead of one greedy pattern. A single
-loose pattern happily "finds" a phone number inside `1234567890123456789`;
-explicit shapes do not.
+**Phone.** Three separate alternatives rather than one loose pattern. My first
+attempt used a loose one and it cheerfully found a phone number inside
+`1234567890123456789`.
 
-**Credit card** — the regex only finds the *shape*. Validity is decided by the
-**Luhn checksum**, which is why `1234 5678 9012 3456` is rejected while
-`4111 1111 1111 1111` is accepted, and why the issuer (Visa / Mastercard / Amex /
-Discover) can be reported from the leading digits.
+**Credit card.** The regex only matches the shape. Whether the number is real
+is decided by the Luhn checksum, which is why `1234 5678 9012 3456` gets
+rejected and `4111 1111 1111 1111` doesn't, and it also lets the tool report
+the issuer from the leading digits.
 
-**Time** — the valid ranges are encoded in the pattern itself
-(`(?:[01]\d|2[0-3]):[0-5]\d`), so `25:99` and `19:61` never match at all rather
-than being caught later.
+**Time.** The valid ranges are baked into the pattern
+(`(?:[01]\d|2[0-3]):[0-5]\d`), so `25:99` and `19:61` never match in the first
+place instead of being filtered out afterwards.
 
-**Hashtag** — must start with a letter or underscore, with lookaheads that
-exclude hex colours. This is what keeps `#ffffff` and `#12345` out of the results
-— the two false positives almost every naive hashtag regex produces.
+**Hashtag.** Must start with a letter or underscore, plus lookaheads that skip
+hex colours. That keeps `#ffffff` and `#12345` out, which are the two false
+positives a simple hashtag regex always produces.
 
-**Currency** — handles symbol-prefix (`$1,299.00`), code-prefix (`USD 3,500.50`)
-and code-suffix (`150,000 RWF`) forms, and both `1,299.00` and European `25,00`
+**Currency.** Covers symbol first (`$1,299.00`), code first (`USD 3,500.50`)
+and code last (`150,000 RWF`), and both the `1,299.00` and European `25,00`
 decimal styles.
-
----
 
 ## Security
 
-The security rubric is treated as a first-class feature, not an afterthought.
+**Injection payloads get quarantined instead of extracted.** Twelve signature
+groups cover XSS (`<script>`, `<iframe>`, `onerror=`, `javascript:`, `data:`
+URIs), SQL injection (tautologies, `UNION SELECT`, `DROP TABLE`, comment
+terminators), command injection (backticks, `$(...)`, `| sh`), template
+injection (`{{...}}`, `${jndi:...}`), path traversal and null bytes.
 
-**1. Injection payloads are quarantined, not extracted.**
-Twelve signature groups cover XSS (`<script>`, `<iframe>`, `onerror=`,
-`javascript:`, `data:` URIs), SQL injection (tautologies, `UNION SELECT`,
-`DROP TABLE`, comment terminators), command injection (`` ` ``, `$(...)`,
-`| sh`), template injection (`{{...}}`, `${jndi:...}`), path traversal (`../`)
-and null bytes.
+**Context counts, not just the match.** `https://evil.example.com/steal` is a
+perfectly valid URL on its own, but inside
+`<script>fetch('https://evil.example.com/steal')</script>` it gets refused with
+the reason `injection_context:xss_script_tag`. Clean data in a hostile line is
+still hostile data.
 
-**2. Context-aware rejection.**
-A candidate is judged by its surroundings as well as itself. `https://evil.example.com/steal`
-is a perfectly well-formed URL — but when it appears inside
-`<script>fetch('https://evil.example.com/steal')</script>` it is refused, with
-the reason `injection_context:xss_script_tag`. Clean-looking data in a hostile
-context is still hostile data.
+**Sensitive values never leave in the clear.** Card numbers are masked to
+`**** **** **** 1111` before they are stored, so the full number is never
+written to the JSON and never sits in the result object. Emails and phones are
+masked by default and you have to pass `--no-mask` to see them.
 
-**3. Sensitive data never leaves in the clear.**
-Card numbers are masked to `**** **** **** 1111` *before* they are stored, so a
-full PAN is never written to the JSON, never logged and never held in the result
-object. Emails and phones are masked by default and require an explicit
-`--no-mask` to reveal.
+**No catastrophic backtracking.** Every quantifier is bounded (`{0,300}` rather
+than `*` on a nested group), input is capped at 2 MB, lines are truncated at
+5,000 characters and each type stops after 500 matches. There's a test that
+feeds `"a"*5000 + "@" + "b"*5000` through every pattern to prove none of them
+hang.
 
-**4. ReDoS-safe by construction.**
-Every quantifier is bounded (`{0,300}`, never `*` or `+` on a nested group), so
-no crafted input can trigger catastrophic backtracking. Input is capped at 2 MB,
-individual lines are truncated at 5,000 characters, and each type stops after 500
-matches. A test feeds the classic `"a"*5000 + "@" + "b"*5000` probe through every
-pattern to prove they terminate.
+**Nothing dynamic.** All the patterns are module level constants. User input is
+never compiled into a regex and never handed to `eval`, `exec` or a shell.
 
-**5. No dynamic code, ever.**
-All patterns are static module-level constants. User input is never compiled into
-a regex and never passed to `eval`, `exec` or a shell — which removes regex
-injection and command injection as a class rather than defending against them
-case by case.
-
-**6. Failures are visible, not silent.**
-Everything rejected is reported in the `rejected` array with a machine-readable
-reason (`failed_luhn_checksum`, `scheme_not_allowed`, `consecutive_dots`,
-`injection:xss_event_handler`, …). Dropping bad data quietly is how bugs hide.
-
----
+**Rejections are visible.** Everything thrown out shows up in the `rejected`
+array with a reason (`failed_luhn_checksum`, `scheme_not_allowed`,
+`consecutive_dots`, `injection:xss_event_handler` and so on). Silently dropping
+bad data is how bugs stay hidden.
 
 ## Sample output
 
-Abridged from `output/sample-output.json`:
+Cut down from `output/sample-output.json`:
 
 ```json
 {
@@ -216,33 +181,28 @@ Abridged from `output/sample-output.json`:
 }
 ```
 
----
+## Edge cases
 
-## Edge cases handled
-
-| Input | Result |
+| Input | What happens |
 |---|---|
-| `user@localhost` | rejected — no public TLD |
-| `double..dots@example.com` | rejected — consecutive dots |
-| `ftp://files.example.com/dump.zip` | rejected — scheme not allowed |
-| `https://user:pass@example.com` | rejected — credentials in URL |
-| `See https://example.com/docs.` | trailing full stop stripped |
-| `1234 5678 9012 3456` | rejected — fails Luhn |
-| `4111-1111-1111` | rejected — wrong length |
+| `user@localhost` | rejected, no public TLD |
+| `double..dots@example.com` | rejected, consecutive dots |
+| `ftp://files.example.com/dump.zip` | rejected, scheme not allowed |
+| `https://user:pass@example.com` | rejected, credentials in the URL |
+| `See https://example.com/docs.` | full stop stripped |
+| `1234 5678 9012 3456` | rejected, fails Luhn |
+| `4111-1111-1111` | rejected, wrong length |
 | `25:99`, `19:61`, `7:60 PM` | never matched |
-| `#ffffff`, `#12345` | not hashtags |
-| `<!-- retry window 15:00 -->` | HTML comment, *not* flagged as SQL |
-| `+250 788 123 456` and `+250-788-123-456` | de-duplicated to one entry |
+| `#ffffff`, `#12345` | not treated as hashtags |
+| `<!-- retry window 15:00 -->` | HTML comment, not flagged as SQL |
+| `+250 788 123 456` and `+250-788-123-456` | de-duplicated to one |
 | `1234567890123456789` | not a phone number |
 
----
+## Tests
 
-## Testing
-
-`src/test_main.py` contains 28 tests across eight test classes — one per data
-type plus a dedicated `TestSecurity` class covering XSS quarantine, SQL
-signatures, context-aware rejection, the HTML-comment false positive, PAN
-masking, and ReDoS termination.
+`src/test_main.py` has 28 tests across eight classes, one per data type plus a
+`TestSecurity` class for the XSS and SQL signatures, context aware rejection,
+the HTML comment false positive, card masking and backtracking.
 
 ```
 $ cd src && python3 test_main.py
@@ -252,21 +212,19 @@ Ran 28 tests in 0.005s
 OK
 ```
 
----
-
 ## Requirements checklist
 
-| Requirement | Where it is met |
+| Requirement | Where |
 |---|---|
-| At least four data types extracted | Eight types — see the table at the top |
-| Regexes correctly identify each type | `PATTERNS` in `src/main.py`, one commented pattern per type |
-| Real-world variations handled | `input/raw-text.txt` sections 1–4: mixed spacing, punctuation, 12h/24h times, symbol and code currency forms |
-| Edge cases handled | `input/raw-text.txt` section 5 and the edge-case table above |
-| Malicious input rejected | `input/raw-text.txt` section 6; `INJECTION_SIGNATURES` + context-aware quarantine |
-| Sensitive data protected | Card numbers masked before storage; emails and phones masked by default |
-| Code clarity and documentation | Commented patterns, docstrings, this README, and 28 tests |
+| At least four data types | Eight, see the table at the top |
+| Regexes identify each type correctly | `PATTERNS` in `src/main.py`, commented per type |
+| Real world variations | `input/raw-text.txt` sections 1 to 4 |
+| Edge cases | `input/raw-text.txt` section 5 and the table above |
+| Malicious input rejected | `input/raw-text.txt` section 6, plus `INJECTION_SIGNATURES` |
+| Sensitive data protected | Cards masked before storage, emails and phones masked by default |
+| Code clarity and documentation | Comments on every pattern, this README, 28 tests |
 
 ## Author
 
-**63DON** — ALU Regex Data Extraction assignment.
-Repository: <https://github.com/63DON/alu-regex-data-extraction_63DON>
+63DON, ALU Regex Data Extraction assignment.
+<https://github.com/63DON/alu-regex-data-extraction_63DON>
